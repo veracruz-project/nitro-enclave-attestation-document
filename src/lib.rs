@@ -6,7 +6,7 @@
 //!
 //! ## Licensing and copyright notice
 //!
-//! See the `LICENSE.markdown` file in the Veracruz root directory for
+//! See the `LICENSE.markdown` file in the repo for
 //! information on licensing and copyright.
 
 use std::collections::BTreeMap;
