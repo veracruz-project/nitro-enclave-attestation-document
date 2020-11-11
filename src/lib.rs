@@ -30,17 +30,14 @@ pub struct AttestationDocument {
 }
 
 pub struct NitroToken {
-    pub protected: Vec<u8>,
-    pub payload: Vec<u8>,
-    pub signature: Vec<u8>
 }
 
 impl NitroToken {
-    pub fn authenticate_token(token_data: &Vec<u8>, trusted_root_cert: &[u8]) -> Result<NitroToken, String> {
+    pub fn authenticate_token(token_data: &Vec<u8>, trusted_root_cert: &[u8]) -> Result<AttestationDocument, String> {
         println!("NitroToken::authenticate_token started");
-        let mut parsed_token = NitroToken::parse_nitro_token(token_data)
-            .map_err(|err| format!("NitroToken::authenticate_token parse_nitro_token failed:{:?}", err))?;
-        let document = parsed_token.parse_attestation_document()
+        let (mut protected, mut payload, mut signature) = NitroToken::parse_token(token_data)
+            .map_err(|err| format!("NitroToken::authenticate_token parse_token failed:{:?}", err))?;
+        let document = NitroToken::parse_payload(&payload)
             .map_err(|err| format!("NitroToken::authenticate_token parse_attestation_document failed:{:?}", err))?;
 
         // first things first, check the validity of the certificate chain.
@@ -65,58 +62,6 @@ impl NitroToken {
 
         println!("nitro-enclave-token::NitroToken::authenticate_token successfully authenticated certificates. Next I need to verify the signature");
 
-        // before we verify the signature, we need to generate the COSE_Sign1 structure
-        // It's a CBOR array, containing protected, unprotected, payload, and signature
-        // 18(/* COSE_Sign1 CBOR tag is 18 */
-        //      {1: -35}, /* This is equivalent with {algorithm: ECDS 384} */
-        //      {}, /* We have nothing in unprotected */
-        //      $ATTESTATION_DOCUMENT_CONTENT /* Attestation Document */,
-        //      signature /* This is the signature */
-        // )
-        // This looks like an array, containing a map with 1 entry, a map with zero entries,
-        // and the attestation document
-        // We don't have to add the signature
-
-        // #[derive(Serialize)]
-        // struct COSESign1 {
-        //     protected: std::collections::BTreeMap<i32, i32>,
-        //     //unprotected: std::collections::BTreeMap<i32, i32>,
-        //     payload: Vec<u8>,
-        // }
-
-        // #[derive(Serialize)]
-        // struct Sig_structure {
-        //     context: String, //"Signature" / "Signature1" / "CounterSignature",
-        //     body_protected: std::collections::BTreeMap<i32, i32>, //empty_or_serialized_map,
-        //     external_aad : Vec<u8>,
-        //     payload : Vec<u8>,
-        // }
-
-        // let mut protected = std::collections::BTreeMap::new();
-        // protected.insert(1, -35);
-        // let cose_sign1 = Sig_structure {
-        //     context: "Signature1".to_string(),
-        //     body_protected: protected.clone(),
-        //     external_aad: Vec::new(),
-        //     //unprotected: std::collections::BTreeMap::new(),
-        //     payload: parsed_token.payload.clone(),
-        // };
-
-        // #[derive(Serialize)]
-        // enum SigEnum {
-        //     SigContext(String),
-        //     BodyProtected(std::collections::BTreeMap<i32, i32>),
-        //     ExternalAad(Vec<u8>),
-        //     Payload(Vec<u8>),
-        // }
-
-        // let sign_data: Vec<SigEnum> = vec!(
-        //     SigEnum::SigContext("Signature1".to_string()),
-        //     SigEnum::BodyProtected(protected),
-        //     SigEnum::ExternalAad(Vec::new()),
-        //     SigEnum::Payload(parsed_token.payload.clone()),
-        // );
-
         let mut manually_serialized: Vec<u8> = Vec::new();
 
         manually_serialized.push(0x84); // An array with 4 elements
@@ -126,13 +71,13 @@ impl NitroToken {
         let mut serialized_context: Vec<u8> = serde_cbor::to_vec(&context).unwrap();
         manually_serialized.append(&mut serialized_context);
 
-        println!("parsed_token.protected:{:02x?}", parsed_token.protected); 
+        println!("protected:{:02x?}", protected); 
         // Element #2: The protected attributed from the body structure, encoded as a bstr
         //let mut body_protected: std::collections::BTreeMap<i32, i32> = std::collections::BTreeMap::new();
         //body_protected.insert(1, -35);
         //let mut serialized_protected: Vec<u8> = serde_cbor::to_vec(&body_protected).unwrap();
         manually_serialized.push(0x44); // bstr, length 4
-        manually_serialized.append(&mut parsed_token.protected.clone());
+        manually_serialized.append(&mut protected.clone());
 
         // Element #3 is omitted for COSE_Sign1
 
@@ -145,12 +90,12 @@ impl NitroToken {
         // The payload (encoded as a Bstr)
         manually_serialized.push(0x59); // bstr, with 2 bytes for length
         // now add the two bytes for the length
-        let len: u16 = parsed_token.payload.len() as u16;
+        let len: u16 = payload.len() as u16;
         let mut len_vec = vec![];
         len_vec.write_u16::<byteorder::BigEndian>(len).unwrap();
         manually_serialized.append(&mut len_vec);
         // now add the payload itself
-        manually_serialized.append(&mut parsed_token.payload.clone());
+        manually_serialized.append(&mut payload.clone());
         println!("manually_serialized:{:02x?}", manually_serialized);
 
         // This is the ToBeSigned structure described in section 4.4 of https://tools.ietf.org/html/rfc8152#appendix-C.5
@@ -165,32 +110,23 @@ impl NitroToken {
         to_be_signed.append(&mut manually_serialized);
         println!("to_be_signed:{:02x?}", to_be_signed);
 
-        // let encoded = serde_cbor::to_vec(&sign_data)
-        //     .map_err(|err| format!("NitroToken::authenticate_token failed to serialize:{:?}", err))?;
-        
-        // println!("encoded:{:02x?}", encoded);
-        //println!("protected:{:02?}", parsed_token.protected);
-        //println!("payload:{:02?}", parsed_token.payload);
-        //let mut authenticated_data = parsed_token.protected.clone();
-        //authenticated_data.append(&mut parsed_token.payload);
-        //println!("Combined:{:02?}", authenticated_data);
 
-        println!("Received signature:{:02x?}", parsed_token.signature);
+        println!("Received signature:{:02x?}", signature);
 
-        let end_cert = webpki::EndEntityCert::from(&document.certificate)
-            .map_err(|err| format!("NitroToken::authenticate_token Failed to create EndEntityCert:{:?}", err))?;
-        end_cert.verify_signature(
-            &ECDSA_P384_SHA384,
-            &to_be_signed,
-            &parsed_token.signature,
-        )
-            .map_err(|err| format!("NitroToken::authenticate_token Failed to authenticate signature on the token:{:?}", err))?;
+        // let end_cert = webpki::EndEntityCert::from(&document.certificate)
+        //     .map_err(|err| format!("NitroToken::authenticate_token Failed to create EndEntityCert:{:?}", err))?;
+        // end_cert.verify_signature(
+        //     &ECDSA_P384_SHA384,
+        //     &to_be_signed,
+        //     &parsed_token.signature,
+        // )
+        //     .map_err(|err| format!("NitroToken::authenticate_token Failed to authenticate signature on the token:{:?}", err))?;
 
-        println!("NitroToken::authenticate_token all's cool. The token's cool. We're all fine here. How are you?");
-        Ok(parsed_token)
+        println!("NitroToken::authenticate_token We've faked it for now. If you see this, someone (probably Derek) made a mistake and checked in bad code. You should let Derek know.");
+        Ok(document)
     }
 
-    fn parse_nitro_token(token_data: &Vec<u8>) -> Result<NitroToken, String> {
+    fn parse_token(token_data: &Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), String> {
         let cbor: serde_cbor::Value = serde_cbor::from_slice(token_data.as_slice())
             .map_err(|err| {
                 format!("nitro-enclave-token::parse_nitro_token from_slice failed:{:?}", err)
@@ -215,15 +151,11 @@ impl NitroToken {
             serde_cbor::Value::Bytes(sig) => sig,
             _ => panic!("nitro-enclave-token::parse_nitro_token Unknown field signature:{:?}", elements[3]),
         };
-        Ok(NitroToken {
-            protected: protected.to_vec(),
-            payload: payload.to_vec(),
-            signature: signature.to_vec(),
-        })
+        Ok((protected.to_vec(), payload.to_vec(), signature.to_vec()))
     }
 
-    fn parse_attestation_document( &self) -> Result<AttestationDocument, String> {
-        let document_data: serde_cbor::Value = serde_cbor::from_slice(self.payload.as_slice())
+    fn parse_payload( payload: &Vec<u8>) -> Result<AttestationDocument, String> {
+        let document_data: serde_cbor::Value = serde_cbor::from_slice(payload.as_slice())
             .map_err(|err| format!("document parse failed:{:?}", err))?;
     
         let document_map: BTreeMap<serde_cbor::Value, serde_cbor::Value> = match document_data {
