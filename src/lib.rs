@@ -16,7 +16,7 @@ use webpki::ECDSA_P384_SHA384;
 use serde::Serialize;
 use serde_cbor::Serializer;
 
-use byteorder::{ BigEndian, LittleEndian, WriteBytesExt};
+use byteorder::{ BigEndian, WriteBytesExt};
 
 pub struct AttestationDocument {
     pub module_id: String,
@@ -92,7 +92,7 @@ impl NitroToken {
         // now add the two bytes for the length
         let len: u16 = payload.len() as u16;
         let mut len_vec = vec![];
-        len_vec.write_u16::<byteorder::BigEndian>(len).unwrap();
+        len_vec.write_u16::<BigEndian>(len).unwrap();
         manually_serialized.append(&mut len_vec);
         // now add the payload itself
         manually_serialized.append(&mut payload.clone());
@@ -104,7 +104,7 @@ impl NitroToken {
         // add the two bytes for the length
         let mut len_vec = vec![];
         let len: u16 = manually_serialized.len() as u16;
-        len_vec.write_u16::<byteorder::BigEndian>(len).unwrap();
+        len_vec.write_u16::<BigEndian>(len).unwrap();
         to_be_signed.append(&mut len_vec);
         // now add the data
         to_be_signed.append(&mut manually_serialized);
@@ -118,7 +118,7 @@ impl NitroToken {
         // end_cert.verify_signature(
         //     &ECDSA_P384_SHA384,
         //     &to_be_signed,
-        //     &parsed_token.signature,
+        //     &signature,
         // )
         //     .map_err(|err| format!("NitroToken::authenticate_token Failed to authenticate signature on the token:{:?}", err))?;
 
