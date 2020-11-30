@@ -18,15 +18,20 @@ use serde_cbor::Serializer;
 
 use byteorder::{ BigEndian, WriteBytesExt};
 
+// The AWS Nitro Attestation Document.
+// This is described in 
+// https://docs.aws.amazon.com/ko_kr/enclaves/latest/user/verify-root.html
+// under the heading "Attestation document specification"
 pub struct AttestationDocument {
     pub module_id: String,
     pub timestamp: u64,
-    pub public_key: Vec<u8>,
-    pub certificate: Vec<u8>,
-    pub pcrs: Vec<Vec<u8>>,
-    pub nonce: Vec<u8>,
     pub digest: String,
-    pub cabundle: Vec<Vec<u8>>
+    pub pcrs: Vec<Vec<u8>>,
+    pub certificate: Vec<u8>,
+    pub cabundle: Vec<Vec<u8>>,
+    pub public_key: Option<Vec<u8>>,
+    pub user_data: Option<Vec<u8>>,
+    pub nonce: Option<Vec<u8>>,
 }
 
 pub struct NitroToken {
@@ -160,12 +165,12 @@ impl NitroToken {
     
         let document_map: BTreeMap<serde_cbor::Value, serde_cbor::Value> = match document_data {
             serde_cbor::Value::Map(map) => map,
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document field ain't what it should be:{:?}", document_data)),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document field ain't what it should be:{:?}", document_data)),
         };
     
         let module_id: String = match document_map.get(&serde_cbor::Value::Text("module_id".to_string())) {
             Some(serde_cbor::Value::Text(val)) => val.to_string(),
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document module_id is wrong type or not present")),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document module_id is wrong type or not present")),
         };
     
         let timestamp: i128 = match document_map.get(&serde_cbor::Value::Text("timestamp".to_string())) {
@@ -176,14 +181,17 @@ impl NitroToken {
         let timestamp: u64 = timestamp.try_into()
             .map_err(|err| format!("nitro-enclave-token::parse_attestation_document failed to convert timestamp to u64:{:?}", err))?;
     
-        let public_key: Vec<u8> = match document_map.get(&serde_cbor::Value::Text("public_key".to_string())) {
-            Some(serde_cbor::Value::Bytes(val)) => val.to_vec(),
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document public_key is wrong type or not present")),
+        let temp = document_map.get(&serde_cbor::Value::Text("public_key".to_string()));
+        let public_key: Option<Vec<u8>> = match temp {
+            Some(serde_cbor::Value::Bytes(val)) => Some(val.to_vec()),
+            Some(Null) => None,
+            None => None,
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document public_key is wrong type or not present:{:?}", temp)),
         };
     
         let certificate: Vec<u8> = match document_map.get(&serde_cbor::Value::Text("certificate".to_string())) {
             Some(serde_cbor::Value::Bytes(val)) => val.to_vec(),
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document certificate is wrong type or not present")),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document certificate is wrong type or not present")),
         };
     
         let pcrs: Vec<Vec<u8>> = match document_map.get(&serde_cbor::Value::Text("pcrs".to_string())) {
@@ -196,22 +204,31 @@ impl NitroToken {
                         Some(serde_cbor::Value::Bytes(inner_vec)) => {
                             ret_vec.push(inner_vec.to_vec());
                         },
-                        _ => return Err(format!("ntiro-enclave-token::parse_attestation_document pcrs inner vec is wrong type or not there?")),
+                        _ => return Err(format!("nitro-enclave-token::parse_attestation_document pcrs inner vec is wrong type or not there?")),
                     }
                 }
                 ret_vec
             },
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document pcrs is wrong type or not present")),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document pcrs is wrong type or not present")),
         };
     
-        let nonce: Vec<u8> = match document_map.get(&serde_cbor::Value::Text("nonce".to_string())) {
-            Some(serde_cbor::Value::Bytes(val)) => val.to_vec(),
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document nonce is wrong type or not present")),
+        let nonce: Option<Vec<u8>> = match document_map.get(&serde_cbor::Value::Text("nonce".to_string())) {
+            Some(serde_cbor::Value::Bytes(val)) => Some(val.to_vec()),
+            None => None,
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document nonce is wrong type or not present")),
+         };
+
+        let user_data: Option<Vec<u8>> = match document_map.get(&serde_cbor::Value::Text("user_data".to_string())) {
+            Some(serde_cbor::Value::Bytes(val)) => Some(val.to_vec()),
+            None => None,
+            Some(Null) => None,
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document user_data is wrong type or not present")),
         };
+
     
         let digest: String = match document_map.get(&serde_cbor::Value::Text("digest".to_string())) {
             Some(serde_cbor::Value::Text(val)) => val.to_string(),
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document digest is wrong type or not present")),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document digest is wrong type or not present")),
         };
     
         let cabundle: Vec<Vec<u8>> = match document_map.get(&serde_cbor::Value::Text("cabundle".to_string())) {
@@ -222,23 +239,24 @@ impl NitroToken {
                         serde_cbor::Value::Bytes(inner_vec) => {
                             ret_vec.push(inner_vec.to_vec());
                         },
-                        _ => return Err(format!("ntiro-enclave-token::parse_attestation_document inner_vec is wrong type")),
+                        _ => return Err(format!("nitro-enclave-token::parse_attestation_document inner_vec is wrong type")),
                     }
                 }
                 ret_vec
             },
-            _ => return Err(format!("ntiro-enclave-token::parse_attestation_document cabundle is wrong type or not present:{:?}", document_map.get(&serde_cbor::Value::Text("cabundle".to_string())))),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document cabundle is wrong type or not present:{:?}", document_map.get(&serde_cbor::Value::Text("cabundle".to_string())))),
         };
     
         Ok(AttestationDocument {
             module_id: module_id,
             timestamp: timestamp,
-            public_key: public_key,
-            certificate: certificate,
-            pcrs: pcrs,
-            nonce: nonce,
             digest: digest,
+            pcrs: pcrs,
+            certificate: certificate,
             cabundle: cabundle,
+            public_key: public_key,
+            user_data: user_data,
+            nonce: nonce,
         })
     }
 }
