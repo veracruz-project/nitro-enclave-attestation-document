@@ -65,8 +65,6 @@ impl NitroToken {
         let verified = verifier.verify_client_cert(&certs)
             .map_err(|err| format!("NitroToken::authenticate_token verify_client_cert failed:{:?}", err))?; 
 
-        println!("nitro-enclave-token::NitroToken::authenticate_token successfully authenticated certificates. Next I need to verify the signature");
-
         let mut manually_serialized: Vec<u8> = Vec::new();
 
         manually_serialized.push(0x84); // An array with 4 elements
@@ -101,7 +99,7 @@ impl NitroToken {
         manually_serialized.append(&mut len_vec);
         // now add the payload itself
         manually_serialized.append(&mut payload.clone());
-        println!("manually_serialized:{:02x?}", manually_serialized);
+        //println!("manually_serialized:{:02x?}", manually_serialized);
 
         // This is the ToBeSigned structure described in section 4.4 of https://tools.ietf.org/html/rfc8152#appendix-C.5
         let mut to_be_signed: Vec<u8> = Vec::new();
@@ -113,7 +111,7 @@ impl NitroToken {
         to_be_signed.append(&mut len_vec);
         // now add the data
         to_be_signed.append(&mut manually_serialized);
-        println!("to_be_signed:{:02x?}", to_be_signed);
+        //println!("to_be_signed:{:02x?}", to_be_signed);
 
 
         println!("Received signature:{:02x?}", signature);
@@ -180,13 +178,12 @@ impl NitroToken {
     
         let timestamp: u64 = timestamp.try_into()
             .map_err(|err| format!("nitro-enclave-token::parse_attestation_document failed to convert timestamp to u64:{:?}", err))?;
-    
-        let temp = document_map.get(&serde_cbor::Value::Text("public_key".to_string()));
-        let public_key: Option<Vec<u8>> = match temp {
+
+        let public_key: Option<Vec<u8>> = match document_map.get(&serde_cbor::Value::Text("public_key".to_string())) {
             Some(serde_cbor::Value::Bytes(val)) => Some(val.to_vec()),
             Some(Null) => None,
             None => None,
-            _ => return Err(format!("nitro-enclave-token::parse_attestation_document public_key is wrong type or not present:{:?}", temp)),
+            _ => return Err(format!("nitro-enclave-token::parse_attestation_document public_key is wrong type or not present")),
         };
     
         let certificate: Vec<u8> = match document_map.get(&serde_cbor::Value::Text("certificate".to_string())) {
