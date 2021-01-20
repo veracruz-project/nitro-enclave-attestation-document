@@ -32,7 +32,7 @@ pub struct NitroToken {}
 
 impl NitroToken {
     pub fn authenticate_token(
-        token_data: &Vec<u8>,
+        token_data: &[u8],
         trusted_root_cert: &[u8],
     ) -> Result<AttestationDocument, String> {
         // Following the steps here: https://docs.aws.amazon.com/enclaves/latest/user/verify-root.html
