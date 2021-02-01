@@ -117,9 +117,9 @@ impl NitroToken {
         }
     }
 
-    fn parse_token(token_data: &Vec<u8>) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), String> {
+    fn parse_token(token_data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), String> {
         let cbor: serde_cbor::Value =
-            serde_cbor::from_slice(token_data.as_slice()).map_err(|err| {
+            serde_cbor::from_slice(token_data).map_err(|err| {
                 format!(
                     "nitro-enclave-token::parse_nitro_token from_slice failed:{:?}",
                     err
