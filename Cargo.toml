@@ -1,5 +1,5 @@
 [package]
-name = "nitro-enclave-token"
+name = "nitro-enclave-attestation-document"
 version = "0.1.0"
 authors = ["dermil01"]
 edition = "2018"
