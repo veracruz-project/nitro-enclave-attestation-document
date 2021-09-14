@@ -13,5 +13,6 @@ serde = "1.0"
 rustls = { git = "https://github.com/veracruz-project/rustls.git", features = [ "dangerous_configuration"], branch = "veracruz" }
 webpki = { git = "https://github.com/veracruz-project/webpki.git", branch = "veracruz" }
 byteorder = "1.3.4"
+serde_with = { version = "=1.9.4", default_features = false }
 aws-nitro-enclaves-cose = "0.1.0"
 openssl = "0.10.31"
