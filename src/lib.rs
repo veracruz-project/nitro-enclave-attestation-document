@@ -52,8 +52,6 @@ impl AttestationDocument {
 
         // Step 3. Verify the certificate's chain
         let mut certs: Vec<rustls::Certificate> = Vec::new();
-        let cert = rustls::Certificate(document.certificate.clone());
-        certs.push(cert);
         for this_cert in document.cabundle.clone().iter().rev() {
             let cert = rustls::Certificate(this_cert.to_vec());
             certs.push(cert);
@@ -71,8 +69,8 @@ impl AttestationDocument {
                 )
             })?;
 
-        let verifier = rustls::AllowAnyAuthenticatedClient::new(root_store);
-        let _verified = verifier.verify_client_cert(&certs).map_err(|err| {
+        let verifier = rustls::server::AllowAnyAuthenticatedClient::new(root_store);
+        let _verified = verifier.verify_client_cert(&rustls::Certificate(document.certificate.clone()), &certs[..], std::time::SystemTime::now()).map_err(|err| {
             format!(
                 "AttestationDocument::authenticate verify_client_cert failed:{:?}",
                 err
