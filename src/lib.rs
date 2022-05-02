@@ -70,7 +70,7 @@ impl AttestationDocument {
             })?;
 
         let verifier = rustls::server::AllowAnyAuthenticatedClient::new(root_store);
-        let _verified = verifier.verify_client_cert(&rustls::Certificate(document.certificate.clone()), &certs[..], std::time::SystemTime::now()).map_err(|err| {
+        let _verified = verifier.verify_client_cert(&rustls::Certificate(document.certificate.clone()), &certs, std::time::SystemTime::now()).map_err(|err| {
             format!(
                 "AttestationDocument::authenticate verify_client_cert failed:{:?}",
                 err
