@@ -9,6 +9,8 @@
 //! See the `LICENSE.markdown` file in the repo for
 //! information on licensing and copyright.
 
+use mbedtls::alloc::List;
+use mbedtls::x509::Certificate;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
@@ -51,26 +53,32 @@ impl AttestationDocument {
         })?;
 
         // Step 3. Verify the certificate's chain
-        let mut certs: Vec<rustls::Certificate> = Vec::new();
-        for this_cert in document.cabundle.clone().iter().rev() {
-            let cert = rustls::Certificate(this_cert.to_vec());
-            certs.push(cert);
-        }
-        let cert = rustls::Certificate(document.certificate.clone());
-        certs.push(cert);
+        let mut certs = List::new();
+        (|| {
+            for this_cert in document.cabundle.clone().iter().rev() {
+                certs.append(Certificate::from_pem_multiple(&this_cert)?);
+            }
+            certs.append(Certificate::from_pem_multiple(&document.certificate)?);
+            Ok(())
+        })()
+        .map_err(|err: mbedtls::Error| {
+            format!(
+                "AttestationDocument::authenticate failed to convert cert:{:?}",
+                err
+            )
+        })?;
 
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store
-            .add(&rustls::Certificate(trusted_root_cert.to_vec()))
-            .map_err(|err| {
+        let mut root_certs = List::new();
+        root_certs.append(
+            Certificate::from_pem_multiple(&trusted_root_cert).map_err(|err| {
                 format!(
                     "AttestationDocument::authenticate failed to add trusted root cert:{:?}",
                     err
                 )
-            })?;
+            })?,
+        );
 
-        let verifier = rustls::server::AllowAnyAuthenticatedClient::new(root_store);
-        let _verified = verifier.verify_client_cert(&rustls::Certificate(document.certificate.clone()), &certs[..], std::time::SystemTime::now()).map_err(|err| {
+        Certificate::verify(&root_certs, &certs, None).map_err(|err| {
             format!(
                 "AttestationDocument::authenticate verify_client_cert failed:{:?}",
                 err
