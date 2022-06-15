@@ -10,7 +10,6 @@ edition = "2018"
 mbedtls = { path = "../rust-mbedtls/mbedtls" }
 serde_cbor = {version = "0.11" }
 serde = "1.0"
-webpki = "0.22.0"
 byteorder = "1.3.4"
 serde_with = { version = "1.9.4", default_features = false }
 aws-nitro-enclaves-cose = "0.1.0"
